@@ -45,7 +45,7 @@ package-aarch64-unknown-linux-musl:
 package-armv5te-unknown-linux-musleabi: package-multitech-conduit \
 	package-multitech-conduit-ap
 
-package-armv7-unknown-linux-musleabihf: package-kerlink-ifemtocell
+package-armv7-unknown-linux-musleabihf: package-kerlink-ifemtocell package-multitech-conduit-ap3
 	$(eval PKG_VERSION := $(shell cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version'))
 	mkdir -p dist
 
@@ -78,14 +78,19 @@ package-multitech-conduit-ap:
 	mkdir -p dist/vendor/multitech/conduit-ap
 	cp packaging/vendor/multitech/conduit-ap/*.ipk dist/vendor/multitech/conduit-ap
 
+package-multitech-conduit-ap3:
+	cd packaging/vendor/multitech/conduit-ap3 && ./package.sh
+	mkdir -p dist/vendor/multitech/conduit-ap3
+	cp packaging/vendor/multitech/conduit-ap3/*.ipk dist/vendor/multitech/conduit-ap3
+
 # Update the version.
 version:
 	test -n "$(VERSION)"
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./chirpstack-concentratord-2g4/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./chirpstack-concentratord-sx1301/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./chirpstack-concentratord-sx1302/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./gateway-id/Cargo.toml
-	sed -i 's/^version.*/version = "$(VERSION)"/g' ./libconcentratord/Cargo.toml
+	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./chirpstack-concentratord-2g4/Cargo.toml
+	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./chirpstack-concentratord-sx1301/Cargo.toml
+	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./chirpstack-concentratord-sx1302/Cargo.toml
+	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./gateway-id/Cargo.toml
+	sed -i 's/^  version.*/  version = "$(VERSION)"/g' ./libconcentratord/Cargo.toml
 	make test
 	git add .
 	git commit -v -m "Bump version to $(VERSION)"

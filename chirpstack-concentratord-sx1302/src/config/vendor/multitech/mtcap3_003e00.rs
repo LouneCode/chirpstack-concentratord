@@ -4,17 +4,15 @@ use libloragw_sx1302::hal;
 use super::super::super::super::config::{self, Region};
 use super::super::{ComType, Configuration, Gps, RadioConfig};
 
-// source: https://github.com/Lora-net/sx1302_hal/blob/master/packet_forwarder/global_conf.json.sx1250.US915
+// source:
+// mPower FW (/opt/lora/global_conf.json.MTCAP3.EU868)
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
-    let region = conf.gateway.region.unwrap_or(Region::US915);
+    let region = conf.gateway.region.unwrap_or(Region::EU868);
 
     let (tx_freq_min, tx_freq_max) = match region {
-        Region::US915 => (923000000, 928000000),
-        Region::AU915 => (915000000, 928000000),
-        _ => return Err(anyhow!("Region is not supported: {}", region)),
+        Region::EU868 => (863_000_000, 870_000_000),
+        _ => return Err(anyhow!("Unsupported region: {}", region)),
     };
-
-    let gps = conf.gateway.model_flags.contains(&"GNSS".to_string());
 
     Ok(Configuration {
         radio_count: 2,
@@ -40,65 +38,65 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                 tx_gain_table: vec![
                     // 0
                     hal::TxGainConfig {
-                        rf_power: 12,
+                        rf_power: 10,
                         pa_gain: 0,
-                        pwr_idx: 15,
+                        pwr_idx: 12,
                         ..Default::default()
                     },
                     // 1
                     hal::TxGainConfig {
-                        rf_power: 13,
+                        rf_power: 11,
                         pa_gain: 0,
-                        pwr_idx: 16,
+                        pwr_idx: 13,
                         ..Default::default()
                     },
                     // 2
                     hal::TxGainConfig {
-                        rf_power: 14,
+                        rf_power: 12,
                         pa_gain: 0,
-                        pwr_idx: 17,
+                        pwr_idx: 14,
                         ..Default::default()
                     },
                     // 3
                     hal::TxGainConfig {
-                        rf_power: 15,
+                        rf_power: 13,
                         pa_gain: 0,
-                        pwr_idx: 19,
+                        pwr_idx: 15,
                         ..Default::default()
                     },
                     // 4
                     hal::TxGainConfig {
-                        rf_power: 16,
+                        rf_power: 14,
                         pa_gain: 0,
-                        pwr_idx: 20,
+                        pwr_idx: 16,
                         ..Default::default()
                     },
                     // 5
                     hal::TxGainConfig {
-                        rf_power: 17,
+                        rf_power: 16,
                         pa_gain: 0,
-                        pwr_idx: 22,
+                        pwr_idx: 17,
                         ..Default::default()
                     },
                     // 6
+                    hal::TxGainConfig {
+                        rf_power: 17,
+                        pa_gain: 1,
+                        pwr_idx: 0,
+                        ..Default::default()
+                    },
+                    // 7
                     hal::TxGainConfig {
                         rf_power: 18,
                         pa_gain: 1,
                         pwr_idx: 1,
                         ..Default::default()
                     },
-                    // 7
+                    // 8
                     hal::TxGainConfig {
                         rf_power: 19,
                         pa_gain: 1,
                         pwr_idx: 2,
-                        ..Default::default()
-                    },
-                    // 8
-                    hal::TxGainConfig {
-                        rf_power: 20,
-                        pa_gain: 1,
-                        pwr_idx: 3,
                         ..Default::default()
                     },
                     // 9
@@ -133,7 +131,7 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                     hal::TxGainConfig {
                         rf_power: 25,
                         pa_gain: 1,
-                        pwr_idx: 9,
+                        pwr_idx: 8,
                         ..Default::default()
                     },
                     // 14
@@ -170,32 +168,27 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                 tx_gain_table: vec![],
             },
         ],
-        gps: match gps {
-            true => Gps::TtyPath(
-                conf.gateway
-                    .gnss_dev_path
-                    .clone()
-                    .unwrap_or("/dev/ttyAMA0".to_string()),
-            ),
-            false => Gps::None,
-        },
+        gps: Gps::None,
         com_type: ComType::Spi,
-        com_path: conf
-            .gateway
-            .com_dev_path
-            .clone()
-            .unwrap_or("/dev/spidev0.0".to_string()),
-        i2c_path: Some(
-            conf.gateway
-                .i2c_dev_path
-                .clone()
-                .unwrap_or("/dev/i2c-1".to_string()),
-        ),
-        i2c_temp_sensor_addr: Some(0x3b),
-        sx1302_reset_pin: conf.gateway.get_sx1302_reset_pin("/dev/gpiochip0", 23),
-        sx1302_power_en_pin: conf.gateway.get_sx1302_power_en_pin("/dev/gpiochip0", 18),
-        sx1261_reset_pin: None,
-        ad5338r_reset_pin: None,
-        reset_commands: None,
+        com_path: "/dev/spidev1.0".to_string(),
+        reset_commands: Some(vec![
+            (
+                "mts-io-sysfs".to_string(),
+                vec![
+                    "store".to_string(),
+                    "lora/reset".to_string(),
+                    "0".to_string(),
+                ],
+            ),
+            (
+                "mts-io-sysfs".to_string(),
+                vec![
+                    "store".to_string(),
+                    "lora/reset".to_string(),
+                    "1".to_string(),
+                ],
+            ),
+        ]),
+        ..Default::default()
     })
 }
