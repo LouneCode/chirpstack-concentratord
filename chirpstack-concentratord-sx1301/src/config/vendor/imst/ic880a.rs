@@ -1,23 +1,27 @@
 use anyhow::Result;
+use libconcentratord::region;
 use libloragw_sx1301::hal;
 
 use super::super::super::super::config::{self, Region};
-use super::super::{Configuration, Gps};
+use super::super::Configuration;
 
 // source:
 // https://shop.imst.de/media/pdf/f5/68/7f/WiMOD_LiteGateway_QuickStartGuide_V1_5.pdf
 pub fn new(conf: &config::Configuration) -> Result<Configuration> {
     let region = conf.gateway.region.unwrap_or(Region::EU868);
 
-    let radio_min_max_tx_freq = match region {
-        Region::EU868 => vec![(863000000, 870000000), (863000000, 870000000)],
-        Region::IN865 => vec![(865000000, 867000000), (865000000, 867000000)],
-        Region::RU864 => vec![(864000000, 870000000), (864000000, 870000000)],
+    let tx_min_max_freqs = match region {
+        Region::EU868 => region::eu868::TX_MIN_MAX_FREQS.to_vec(),
+        Region::IN865 => region::in865::TX_MIN_MAX_FREQS.to_vec(),
+        Region::RU864 => region::ru864::TX_MIN_MAX_FREQS.to_vec(),
         _ => return Err(anyhow!("Region is not supported: {}", region)),
     };
 
+    let enforce_duty_cycle = conf.gateway.model_flags.contains(&"ENFORCE_DC".to_string());
+
     Ok(Configuration {
-        radio_min_max_tx_freq,
+        tx_min_max_freqs,
+        enforce_duty_cycle,
         radio_count: 2,
         clock_source: 1,
         radio_rssi_offset: vec![-166.0, -166.0],
@@ -155,12 +159,8 @@ pub fn new(conf: &config::Configuration) -> Result<Configuration> {
                 dac_gain: 3,
             },
         ],
-        gps: Gps::None,
-        spidev_path: conf
-            .gateway
-            .com_dev_path
-            .clone()
-            .unwrap_or("/dev/spidev0.0".to_string()),
+        spidev_path: conf.gateway.get_com_dev_path("/dev/spidev0.0"),
         reset_pin: conf.gateway.get_sx1301_reset_pin("/dev/gpiochip0", 5),
+        ..Default::default()
     })
 }

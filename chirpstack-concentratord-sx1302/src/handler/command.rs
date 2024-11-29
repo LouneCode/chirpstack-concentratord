@@ -18,7 +18,7 @@ pub fn handle_loop(
     rep_sock: zmq::Socket,
     stop_receive: Receiver<Signal>,
     stop_send: Sender<Signal>,
-) {
+) -> Result<()> {
     debug!("Starting command handler loop");
 
     // A timeout is used so that we can consume from the stop signal.
@@ -27,7 +27,7 @@ pub fn handle_loop(
     for cmd in reader {
         if let Ok(v) = stop_receive.recv_timeout(Duration::from_millis(0)) {
             debug!("Received stop signal, signal: {}", v);
-            break;
+            return Ok(());
         }
 
         let resp = match cmd {
@@ -37,14 +37,20 @@ pub fn handle_loop(
             commands::Command::Downlink(pl) => {
                 match handle_downlink(vendor_config, gateway_id, &queue, &pl) {
                     Ok(v) => v,
-                    Err(_) => Vec::new(),
+                    Err(e) => {
+                        error!("Handle downlink error: {}", e);
+                        Vec::new()
+                    }
                 }
             }
             commands::Command::GatewayID => gateway_id.to_vec(),
             commands::Command::Configuration(pl) => {
                 match handle_configuration(stop_send.clone(), pl) {
                     Ok(v) => v,
-                    Err(_) => Vec::new(),
+                    Err(e) => {
+                        error!("Handle configuration error: {}", e);
+                        Vec::new()
+                    }
                 }
             }
             commands::Command::Error(err) => {
@@ -57,10 +63,10 @@ pub fn handle_loop(
             }
         };
 
-        rep_sock.send(resp, 0).unwrap();
+        rep_sock.send(resp, 0)?;
     }
 
-    debug!("Command loop ended");
+    Ok(())
 }
 
 fn handle_downlink(
@@ -95,8 +101,16 @@ fn handle_downlink(
         // validate frequency range
         match vendor_config.radio_config.get(tx_packet.rf_chain as usize) {
             Some(v) => {
-                if tx_packet.freq_hz < v.tx_freq_min || tx_packet.freq_hz > v.tx_freq_max {
-                    error!("Frequency is not within min/max gateway frequency, downlink_id: {}, min_freq: {}, max_freq: {}", pl.downlink_id, v.tx_freq_min, v.tx_freq_max);
+                if !v
+                    .tx_min_max_freqs
+                    .iter()
+                    .map(|(freq_min, freq_max)| {
+                        tx_packet.freq_hz >= *freq_min && tx_packet.freq_hz <= *freq_max
+                    })
+                    .collect::<Vec<bool>>()
+                    .contains(&true)
+                {
+                    error!("Frequency is not within min / max gateway frequencies, downlink_id: {}, freq: {}", pl.downlink_id, tx_packet.freq_hz);
                     tx_ack.items[i].set_status(chirpstack_api::gw::TxAckStatus::TxFreq);
 
                     // try next
@@ -112,10 +126,13 @@ fn handle_downlink(
         };
 
         // try enqueue
-        match queue.lock().unwrap().enqueue(
-            hal::get_instcnt().expect("get concentrator count error"),
-            wrapper::TxPacket::new(pl.downlink_id, tx_packet),
-        ) {
+        match queue
+            .lock()
+            .map_err(|_| anyhow!("Queue lock error"))?
+            .enqueue(
+                hal::get_instcnt()?,
+                wrapper::TxPacket::new(pl.downlink_id, tx_packet),
+            ) {
             Ok(_) => {
                 tx_ack.items[i].set_status(chirpstack_api::gw::TxAckStatus::Ok);
                 stats_tx_status = chirpstack_api::gw::TxAckStatus::Ok;

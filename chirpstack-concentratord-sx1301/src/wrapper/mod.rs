@@ -50,6 +50,14 @@ impl jitqueue::TxPacket for TxPacket {
     fn get_id(&self) -> u32 {
         self.1
     }
+
+    fn get_frequency(&self) -> u32 {
+        self.0.freq_hz
+    }
+
+    fn get_tx_power(&self) -> i8 {
+        self.0.rf_power
+    }
 }
 
 pub fn uplink_to_proto(
@@ -95,7 +103,7 @@ pub fn uplink_to_proto(
             tx_info.modulation = Some(gw::Modulation {
                 parameters: Some(gw::modulation::Parameters::Fsk(gw::FskModulationInfo {
                     datarate: match packet.datarate {
-                        hal::DataRate::FSK(v) => v * 1000,
+                        hal::DataRate::FSK(v) => v,
                         _ => return Err(anyhow!("unexpected datarate")),
                     },
                     ..Default::default()
@@ -337,7 +345,7 @@ pub fn downlink_to_tx_info_proto(packet: &hal::TxPacket) -> Result<gw::DownlinkT
             tx_info.modulation = Some(gw::Modulation {
                 parameters: Some(gw::modulation::Parameters::Fsk(gw::FskModulationInfo {
                     datarate: match packet.datarate {
-                        hal::DataRate::FSK(v) => v * 1000,
+                        hal::DataRate::FSK(v) => v,
                         _ => return Err(anyhow!("unexpected datarate")),
                     },
                     ..Default::default()

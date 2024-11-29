@@ -1,7 +1,10 @@
-use std::{fmt, fs};
+use std::{env, fmt, fs};
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+use libconcentratord::gnss;
+use libconcentratord::regulation::{standard, tracker::Tracker};
 
 pub mod helpers;
 pub mod vendor;
@@ -77,27 +80,22 @@ pub struct Location {
     pub altitude: i16,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
 pub struct Gateway {
-    #[serde(default)]
     pub antenna_gain: i8,
-    #[serde(default)]
     pub lorawan_public: bool,
 
     pub region: Option<Region>,
     pub model: String,
-    #[serde(default)]
     pub model_flags: Vec<String>,
+    pub gateway_id: Option<String>,
 
-    #[serde(default)]
     pub time_fallback_enabled: bool,
     pub concentrator: Concentrator,
-    #[serde(default)]
     pub beacon: Beacon,
-    #[serde(default)]
     pub location: Location,
 
-    #[serde(default)]
     pub fine_timestamp: FineTimestamp,
 
     pub sx1302_reset_chip: Option<String>,
@@ -109,15 +107,46 @@ pub struct Gateway {
     pub sx1261_reset_chip: Option<String>,
     pub sx1261_reset_pin: Option<u32>,
 
-    pub gnss_dev_path: Option<String>,
+    pub gnss_dev_path: Option<gnss::Device>,
     pub com_dev_path: Option<String>,
     pub i2c_dev_path: Option<String>,
 
     #[serde(skip)]
+    pub gateway_id_bytes: Option<[u8; 8]>,
+    #[serde(skip)]
     pub model_config: vendor::Configuration,
-
     #[serde(skip)]
     pub config_version: String,
+}
+
+impl Default for Gateway {
+    fn default() -> Self {
+        Gateway {
+            antenna_gain: 2,
+            lorawan_public: true,
+            region: None,
+            model: "".into(),
+            model_flags: vec![],
+            gateway_id: None,
+            time_fallback_enabled: false,
+            concentrator: Concentrator::default(),
+            beacon: Beacon::default(),
+            location: Location::default(),
+            fine_timestamp: FineTimestamp::default(),
+            sx1302_reset_chip: None,
+            sx1302_reset_pin: None,
+            sx1302_power_en_chip: None,
+            sx1302_power_en_pin: None,
+            sx1261_reset_chip: None,
+            sx1261_reset_pin: None,
+            gateway_id_bytes: None,
+            gnss_dev_path: None,
+            com_dev_path: None,
+            i2c_dev_path: None,
+            model_config: vendor::Configuration::default(),
+            config_version: "".into(),
+        }
+    }
 }
 
 impl Gateway {
@@ -158,6 +187,22 @@ impl Gateway {
             .unwrap_or(default_chip.to_string());
         let pin = self.sx1261_reset_pin.unwrap_or(default_pin);
         Some((chip, pin))
+    }
+
+    pub fn get_gnss_dev_path(&self, gnss_dev_path: &gnss::Device) -> gnss::Device {
+        self.gnss_dev_path.clone().unwrap_or(gnss_dev_path.clone())
+    }
+
+    pub fn get_com_dev_path(&self, com_dev_path: &str) -> String {
+        self.com_dev_path
+            .clone()
+            .unwrap_or(com_dev_path.to_string())
+    }
+
+    pub fn get_i2c_dev_path(&self, i2c_dev_path: &str) -> String {
+        self.i2c_dev_path
+            .clone()
+            .unwrap_or(i2c_dev_path.to_string())
     }
 }
 
@@ -223,11 +268,23 @@ pub struct Configuration {
     pub gateway: Gateway,
 }
 
+impl Configuration {
+    pub fn get_duty_cycle_tracker(&self) -> Option<Tracker> {
+        match self.gateway.region {
+            Some(Region::EU868) => Some(Tracker::new(
+                standard::get(standard::Standard::ETSI_EN_300_220),
+                self.gateway.model_config.enforce_duty_cycle,
+            )),
+            _ => None,
+        }
+    }
+}
+
 fn example_configuration() -> Configuration {
     Configuration {
         gateway: Gateway {
             lorawan_public: true,
-            model: "rak_2287_eu868".to_string(),
+            model: "rak_2287".to_string(),
             concentrator: Concentrator {
                 multi_sf_channels: [
                     868100000, 868300000, 868500000, 867100000, 867300000, 867500000, 867700000,
@@ -262,7 +319,22 @@ pub fn get(filenames: Vec<String>) -> Configuration {
         content.push_str(&fs::read_to_string(file_name).expect("Error reading config file"));
     }
 
+    // Replace environment variables in config.
+    for (k, v) in env::vars() {
+        content = content.replace(&format!("${}", k), &v);
+    }
+
     let mut config: Configuration = toml::from_str(&content).expect("Error parsing config file");
+
+    // decode gateway id
+    if let Some(gateway_id) = &config.gateway.gateway_id {
+        let bytes = hex::decode(gateway_id).expect("Could not decode gateway_id");
+        if bytes.len() != 8 {
+            panic!("gateway_id must be exactly 8 bytes");
+        }
+        let id = bytes.as_slice();
+        config.gateway.gateway_id_bytes = Some(id[0..8].try_into().unwrap());
+    }
 
     // get model configuration
     config.gateway.model_config = match config.gateway.model.as_ref() {

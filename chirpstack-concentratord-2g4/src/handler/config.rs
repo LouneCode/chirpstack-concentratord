@@ -41,7 +41,10 @@ pub fn update_configuration(
     }
 
     // set config
-    config.gateway.config_version = new_config.version.clone();
+    if let Some(stats_interval) = new_config.stats_interval {
+        config.concentratord.stats_interval = stats_interval.try_into()?;
+    }
+    config.gateway.config_version.clone_from(&new_config.version);
     config.gateway.concentrator = concentrator;
 
     Ok(())
